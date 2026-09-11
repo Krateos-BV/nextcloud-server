@@ -27,6 +27,7 @@ use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
 use OCP\Files\Mount\IMountManager;
 use OCP\Files\NotFoundException;
+use OCP\IDBConnection;
 use OCP\IUser;
 use OCP\IUserManager;
 use OCP\L10N\IFactory;
@@ -388,6 +389,9 @@ class OwnershipTransferService {
 		}, $shares)));
 	}
 
+	/**
+	 * @return array<int, IShare> shares keyed by node ID
+	 */
 	private function collectIncomingShares(
 		string $sourceUid,
 		OutputInterface $output,
@@ -517,6 +521,8 @@ class OwnershipTransferService {
 					if ($shareMountPoint) {
 						$this->mountManager->removeMount($shareMountPoint->getMountPoint());
 					}
+
+					$this->promoteLinkShares($share);
 					$this->shareManager->deleteShare($share);
 				} else {
 					if ($share->getShareOwner() === $sourceUid) {
@@ -594,11 +600,13 @@ class OwnershipTransferService {
 				$shareTarget = $finalShareTarget . $shareTarget;
 				if ($share->getShareType() === IShare::TYPE_USER
 					&& $share->getSharedBy() === $destinationUid) {
+					$this->promoteLinkShares($share);
 					$this->shareManager->deleteShare($share);
 				} elseif (isset($destinationShares[$share->getNodeId()])) {
 					$destinationShare = $destinationShares[$share->getNodeId()];
 					// Keep the share which has the most permissions and discard the other one.
 					if ($destinationShare->getPermissions() < $share->getPermissions()) {
+						$this->promoteLinkShares($destinationShare, $share->getId());
 						$this->shareManager->deleteShare($destinationShare);
 						$share->setSharedWith($destinationUid);
 						// trigger refetching of the node so that the new owner and mountpoint are taken into account
@@ -615,8 +623,10 @@ class OwnershipTransferService {
 						$this->shareManager->moveShare($share, $destinationUid);
 						continue;
 					}
+					$this->promoteLinkShares($share, $destinationShare->getId());
 					$this->shareManager->deleteShare($share);
 				} elseif ($share->getShareOwner() === $destinationUid) {
+					$this->promoteLinkShares($share);
 					$this->shareManager->deleteShare($share);
 				} else {
 					$share->setSharedWith($destinationUid);
