@@ -1,0 +1,74 @@
+# XeniaCloud fork CI.
+#
+# Deliberately narrow: this fork exists to carry core patches (XNT-104), not to
+# re-run upstream's full server matrix. It verifies only the test files touched
+# by those patches, so a run costs minutes rather than the ~35 min that the
+# nextcloud-desktop Windows job does (see XNT-48 / XNT-47 billing review).
+#
+# workflow_dispatch only. A push trigger stays deferred until XNT-47 resolves,
+# same rationale as XNT-48: committing a push-triggered workflow fires it
+# immediately and cannot be staged.
+#
+# The `ref` input exists so that patch branches destined for an upstream PR do
+# not have to carry this file. Keeping it on master only means the PR branch
+# stays clean: patch + tests, nothing Xenia-specific.
+
+name: Xenia CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to test (branch, tag or SHA)'
+        required: true
+        default: 'master'
+      testpath:
+        description: 'PHPUnit path to run'
+        required: true
+        default: 'apps/dav/tests/unit/Connector/Sabre/PrincipalTest.php'
+
+permissions:
+  contents: read
+
+jobs:
+  phpunit:
+    runs-on: ubuntu-latest
+    name: PHPUnit (PHP 8.3) — ${{ inputs.ref }}
+
+    steps:
+      - name: Checkout ${{ inputs.ref }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up PHP 8.3
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        timeout-minutes: 5
+        with:
+          php-version: '8.3'
+          extensions: apcu, bz2, ctype, curl, dom, fileinfo, gd, iconv, intl, json, libxml, mbstring, openssl, pcntl, pdo_sqlite, posix, session, simplexml, sqlite, xmlreader, xmlwriter, zip, zlib
+          coverage: none
+          ini-file: development
+          ini-values: disable_functions=""
+        env:
+          fail-fast: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: composer i
+
+      - name: Set up Nextcloud (sqlite)
+        run: |
+          mkdir data
+          cp tests/preseed-config.php config/config.php
+          ./occ maintenance:install --verbose --database=sqlite --database-name=nextcloud --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass admin
+          php -f tests/enable_all.php
+
+      - name: PHPUnit — ${{ inputs.testpath }}
+        run: composer run test -- "${{ inputs.testpath }}"
+
+      - name: Print Nextcloud log
+        if: always()
+        run: cat data/nextcloud.log || true
