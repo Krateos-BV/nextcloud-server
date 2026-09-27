@@ -13,7 +13,7 @@
 # immediately and cannot be staged.
 #
 # The `ref` input exists so that patch branches destined for an upstream PR do
-# not have to carry this file. Keeping it on master only means the PR branch
+# not have to carry this file. Keeping it on main only means the PR branch
 # stays clean: patch + tests, nothing Xenia-specific.
 
 name: Xenia CI
@@ -24,7 +24,7 @@ on:
       ref:
         description: 'Git ref to test (branch, tag or SHA)'
         required: true
-        default: 'master'
+        default: 'main'
       testpath:
         description: 'PHPUnit path to run'
         required: true
